@@ -67,9 +67,6 @@ python3 src/node.py 4
 ### Terminale 5
 python3 src/node.py 5
 
-In alternativa, su macOS è possibile utilizzare lo script `run_nodes.sh`
-per avviare automaticamente tutti i nodi.
-
 ---
 
 ## Comandi disponibili
