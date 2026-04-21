@@ -87,7 +87,7 @@ Durante l'esecuzione di un nodo sono disponibili i seguenti comandi:
 1. Avviare i 5 nodi
 2. Da un nodo qualsiasi, digitare `e` per avviare l'elezione iniziale
 3. Verificare che P5 venga eletto coordinatore
-4. Terminare manualmente P5 con `Ctrl + C`
+4. Terminare manualmente P5 con `Ctrl + C` oppure digitando `q` nel nodo P5
 5. Attendere la rilevazione automatica del guasto
 6. Verificare che venga avviata una nuova elezione
 7. Verificare che P4 diventi il nuovo coordinatore
