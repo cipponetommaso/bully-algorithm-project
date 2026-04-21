@@ -1,6 +1,8 @@
 # bully.py
 
-from config import NODES
+import threading
+
+from config import NODES, ANSWER_TIMEOUT, COORDINATOR_TIMEOUT
 from messages import ELECTION, ANSWER, COORDINATOR
 from utils import log, send_message
 
@@ -14,8 +16,9 @@ Qui viene gestito il comportamento del nodo quando:
 - riceve un messaggio ANSWER
 - riceve un messaggio COORDINATOR
 
-Per ora realizziamo la struttura base del comportamento.
-Successivamente aggiungeremo anche la gestione completa dei timeout.
+In questa versione vengono anche gestiti i timeout reali richiesti dalla traccia:
+- timeout per aspettare ANSWER
+- timeout per aspettare COORDINATOR
 """
 
 
@@ -24,12 +27,13 @@ class BullyNode:
     Questa classe rappresenta lo stato logico del nodo rispetto
     all'algoritmo di elezione.
 
-    Non gestisce direttamente la socket server: quello è compito di node.py.
+    Non gestisce direttamente la socket server perché quello è compito di node.py.
 
     Questa classe si occupa invece di:
     - tenere traccia del coordinatore corrente
     - sapere se è in corso un'elezione
     - reagire ai messaggi ricevuti
+    - gestire i timeout dell'algoritmo
     """
 
     def __init__(self, node_id):
@@ -43,12 +47,22 @@ class BullyNode:
         - coordinator_id: coordinatore attualmente noto
         - election_in_progress: indica se il nodo è dentro una procedura di elezione
         - received_answer: indica se il nodo ha ricevuto almeno un ANSWER
+        - coordinator_received: indica se il nodo ha ricevuto il messaggio COORDINATOR
+        - answer_timer: timer usato per aspettare ANSWER
+        - coordinator_timer: timer usato per aspettare COORDINATOR
         """
 
         self.node_id = node_id
         self.coordinator_id = None
         self.election_in_progress = False
         self.received_answer = False
+        self.coordinator_received = False
+
+        self.answer_timer = None
+        self.coordinator_timer = None
+
+        # Lock utile per evitare problemi tra thread diversi
+        self.lock = threading.Lock()
 
     def start_election(self):
         """
@@ -58,37 +72,45 @@ class BullyNode:
 
         Logica dell'algoritmo:
         - se esistono nodi con ID maggiore, il nodo li contatta
+        - poi aspetta per un certo tempo un eventuale ANSWER
         - se non esistono nodi con ID maggiore, allora questo nodo
           è il più alto attivo e può proclamarsi coordinatore
         """
 
-        log(self.node_id, "Avvio elezione")
+        with self.lock:
+            log(self.node_id, "Avvio elezione")
 
-        self.election_in_progress = True
-        self.received_answer = False
+            self.election_in_progress = True
+            self.received_answer = False
+            self.coordinator_received = False
+            self.coordinator_id = None
 
-        higher_nodes = [node_id for node_id in NODES if node_id > self.node_id]
+            self.cancel_timers()
 
-        if not higher_nodes:
+            higher_nodes = [node_id for node_id in NODES if node_id > self.node_id]
+
+            if not higher_nodes:
+                """
+                Se non ci sono nodi con ID superiore, questo nodo è il più alto.
+                Quindi può diventare coordinatore direttamente.
+                """
+                log(self.node_id, "Nessun nodo con ID superiore")
+                self.become_coordinator()
+                return
+
+            for target_id in higher_nodes:
+                log(self.node_id, f"Invio ELECTION a P{target_id}")
+                send_message(self.node_id, target_id, ELECTION)
+
             """
-            Se non ci sono nodi con ID superiore, questo nodo è il più alto.
-            Quindi può diventare coordinatore direttamente.
+            Dopo aver inviato ELECTION, il nodo aspetta per un tempo limitato
+            eventuali messaggi ANSWER.
+
+            Se nessun ANSWER arriva entro il timeout, il nodo conclude
+            di essere il più alto attivo e si proclama coordinatore.
             """
-            log(self.node_id, "Nessun nodo con ID superiore")
-            self.become_coordinator()
-            return
-
-        for target_id in higher_nodes:
-            log(self.node_id, f"Invio ELECTION a P{target_id}")
-            send_message(self.node_id, target_id, ELECTION)
-
-        """
-        Per ora qui ci fermiamo.
-
-        In una fase successiva aggiungeremo il timeout:
-        - se non arriva nessun ANSWER entro T, il nodo diventa coordinatore
-        - se arriva almeno un ANSWER, aspetta il messaggio COORDINATOR
-        """
+            self.answer_timer = threading.Timer(ANSWER_TIMEOUT, self.on_answer_timeout)
+            self.answer_timer.start()
 
     def handle_message(self, message):
         """
@@ -145,29 +167,53 @@ class BullyNode:
         Significato:
         - esiste almeno un nodo con ID più alto che è attivo
         - quindi questo nodo non può proclamarsi subito coordinatore
+
+        Dopo aver ricevuto ANSWER:
+        - il nodo smette di aspettare altri ANSWER
+        - inizia ad aspettare il messaggio COORDINATOR
         """
 
-        log(self.node_id, f"Ricevuto ANSWER da P{sender_id}")
+        with self.lock:
+            log(self.node_id, f"Ricevuto ANSWER da P{sender_id}")
 
-        self.received_answer = True
+            self.received_answer = True
+
+            if self.answer_timer is not None:
+                self.answer_timer.cancel()
+                self.answer_timer = None
+
+            """
+            Ora il nodo sa che esiste almeno un nodo superiore attivo.
+            Deve quindi aspettare che uno di questi si proclami coordinatore.
+            """
+            if self.coordinator_timer is None:
+                self.coordinator_timer = threading.Timer(
+                    COORDINATOR_TIMEOUT,
+                    self.on_coordinator_timeout
+                )
+                self.coordinator_timer.start()
 
     def handle_coordinator(self, sender_id):
         """
         Questo metodo gestisce la ricezione del messaggio COORDINATOR.
 
-        Azioni eseguite
+        Significato:
         - il nodo mittente si sta proclamando coordinatore
         - tutti gli altri nodi devono aggiornare il coordinatore corrente
           e terminare l'elezione in corso
         """
 
-        log(self.node_id, f"Ricevuto COORDINATOR da P{sender_id}")
+        with self.lock:
+            log(self.node_id, f"Ricevuto COORDINATOR da P{sender_id}")
 
-        self.coordinator_id = sender_id
-        self.election_in_progress = False
-        self.received_answer = False
+            self.coordinator_id = sender_id
+            self.election_in_progress = False
+            self.received_answer = False
+            self.coordinator_received = True
 
-        log(self.node_id, f"Il nuovo coordinatore è P{sender_id}")
+            self.cancel_timers()
+
+            log(self.node_id, f"Il nuovo coordinatore è P{sender_id}")
 
     def become_coordinator(self):
         """
@@ -183,6 +229,9 @@ class BullyNode:
         self.coordinator_id = self.node_id
         self.election_in_progress = False
         self.received_answer = False
+        self.coordinator_received = True
+
+        self.cancel_timers()
 
         log(self.node_id, "Mi dichiaro COORDINATORE")
 
@@ -191,3 +240,54 @@ class BullyNode:
         for target_id in lower_nodes:
             log(self.node_id, f"Invio COORDINATOR a P{target_id}")
             send_message(self.node_id, target_id, COORDINATOR)
+
+    def on_answer_timeout(self):
+        """
+        Questo metodo viene chiamato automaticamente quando scade
+        il tempo massimo di attesa per un messaggio ANSWER.
+
+        Se nessun ANSWER è stato ricevuto, il nodo conclude di essere
+        il nodo attivo con ID più alto e diventa coordinatore.
+        """
+
+        with self.lock:
+            if not self.received_answer and self.election_in_progress:
+                log(self.node_id, "Timeout scaduto: nessun ANSWER ricevuto")
+                self.become_coordinator()
+
+    def on_coordinator_timeout(self):
+        """
+        Questo metodo viene chiamato automaticamente quando scade
+        il tempo massimo di attesa per il messaggio COORDINATOR.
+
+        Significato:
+        - il nodo aveva ricevuto almeno un ANSWER
+        - quindi sapeva che esisteva un nodo superiore attivo
+        - ma nessuno si è proclamato coordinatore entro il tempo previsto
+
+        In questo caso il nodo riavvia una nuova elezione.
+        """
+
+        with self.lock:
+            if not self.coordinator_received and self.election_in_progress:
+                log(self.node_id, "Timeout scaduto: nessun COORDINATOR ricevuto")
+                log(self.node_id, "Riavvio elezione")
+                self.start_election()
+
+    def cancel_timers(self):
+        """
+        Questo metodo annulla eventuali timer attivi.
+
+        Serve quando:
+        - arriva un messaggio che chiude l'elezione
+        - il nodo diventa coordinatore
+        - bisogna ripartire da uno stato pulito
+        """
+
+        if self.answer_timer is not None:
+            self.answer_timer.cancel()
+            self.answer_timer = None
+
+        if self.coordinator_timer is not None:
+            self.coordinator_timer.cancel()
+            self.coordinator_timer = None
