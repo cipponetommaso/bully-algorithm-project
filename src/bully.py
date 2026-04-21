@@ -302,7 +302,7 @@ class BullyNode:
         """
 
         while True:
-            time.sleep(COORDINATOR_TIMEOUT)
+            time.sleep(ANSWER_TIMEOUT)
 
             with self.lock:
                 """
