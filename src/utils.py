@@ -1,7 +1,7 @@
 # utils.py
 
 import socket
-from config import NODES, COORDINATOR_TIMEOUT, ANSWER_TIMEOUT
+from config import NODES, ANSWER_TIMEOUT
 from messages import build_message
 
 """
