@@ -72,3 +72,32 @@ def send_message(sender_id, target_id, msg_type):
         simula il guasto di un nodo (ad esempio P5).
         """
         log(sender_id, f"Errore nell'invio a P{target_id}: {e}")
+
+def is_node_alive(target_id):
+    """
+    Questa funzione verifica se un nodo è raggiungibile.
+
+    Parametri:
+    - target_id: ID del nodo da controllare
+
+    Il controllo viene fatto provando ad aprire una connessione TCP
+    verso il nodo target.
+
+    Se la connessione riesce il nodo è considerato attivo.
+    Se la connessione fallisce il nodo è considerato non
+    raggiungibile, quindi potenzialmente fallito.
+    Si verifica solo se la porta è raggiungibile.
+    """
+
+    host, port = NODES[target_id]
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # Impostiamo un timeout breve per non bloccare il nodo
+            s.settimeout(1)
+            s.connect((host, port))
+
+        return True
+
+    except Exception:
+        return False
