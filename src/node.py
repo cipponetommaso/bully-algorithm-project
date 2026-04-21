@@ -20,10 +20,8 @@ Ogni nodo:
 - riceve i messaggi dagli altri nodi
 - passa i messaggi ricevuti alla logica del Bully Algorithm
 
-In questo file gestiamo:
-- la parte di rete
-- l'avvio del nodo
-- la ricezione dei messaggi
+Inoltre, per facilitare il test del progetto,
+il nodo può anche ricevere comandi da tastiera.
 """
 
 
@@ -35,9 +33,7 @@ class Node:
     - il proprio ID
     - il proprio host
     - la propria porta
-
-    Inoltre possiede un oggetto BullyNode, che contiene
-    la logica dell'algoritmo di elezione.
+    - un oggetto BullyNode, che contiene la logica dell'algoritmo di elezione.
     """
 
     def __init__(self, node_id):
@@ -47,8 +43,8 @@ class Node:
         Parametri:
         - node_id: identificativo del nodo, ad esempio 1, 2, 3, 4 o 5
 
-        Dal file config.py recuperiamo automaticamente host e porta
-        associati a questo nodo.
+        Dal file config.py recuperiamo automaticamente host
+        e porta associati a questo nodo.
 
         Inoltre inizializziamo anche la parte logica
         del Bully Algorithm.
@@ -79,6 +75,7 @@ class Node:
 
         log(self.node_id, f"Nodo avviato su {self.host}:{self.port}")
         log(self.node_id, "In attesa di messaggi...")
+        log(self.node_id, "Comandi disponibili: e = elezione, c = coordinatore, q = esci")
 
         while True:
             client_socket, client_address = server_socket.accept()
@@ -101,7 +98,7 @@ class Node:
         Il metodo:
         - riceve i dati
         - interpreta il messaggio
-        - passa il messaggio alla logica Bully
+        - passa il messaggio alla logica Bully Algorithm
         - chiude la connessione
         """
 
@@ -125,6 +122,62 @@ class Node:
 
         finally:
             client_socket.close()
+
+    def handle_user_input(self):
+        """
+        Questo metodo legge comandi da tastiera durante l'esecuzione del nodo.
+
+        È utile per testare il progetto e per mostrare il comportamento
+        dell'algoritmo durante la demo.
+
+        Comandi disponibili:
+        - e : avvia una nuova elezione
+        - c : mostra il coordinatore corrente
+        - q : termina il nodo
+        """
+
+        while True:
+            try:
+                command = input().strip().lower()
+
+                if command == "e":
+                    log(self.node_id, "Comando ricevuto: avvio elezione")
+                    self.bully_node.start_election()
+
+                elif command == "c":
+                    if self.bully_node.coordinator_id is None:
+                        log(self.node_id, "Nessun coordinatore noto al momento")
+                    else:
+                        log(self.node_id, f"Coordinatore corrente: P{self.bully_node.coordinator_id}")
+
+                elif command == "q":
+                    log(self.node_id, "Chiusura del nodo")
+                    sys.exit(0)
+
+                else:
+                    log(self.node_id, "Comando non riconosciuto. Usa: e, c, q")
+
+            except Exception as e:
+                log(self.node_id, f"Errore nella lettura dell'input: {e}")
+
+    def start(self):
+        """
+        Questo metodo avvia completamente il nodo.
+
+        Per far funzionare correttamente il sistema servono due attività parallele:
+        - il server di rete, che riceve messaggi dagli altri nodi
+        - la lettura dei comandi da tastiera, utile per test e demo
+
+        Per questo motivo:
+        - il server gira in un thread separato
+        - il thread principale resta disponibile per l'input da tastiera
+        """
+
+        server_thread = threading.Thread(target=self.start_server)
+        server_thread.daemon = True
+        server_thread.start()
+
+        self.handle_user_input()
 
 
 def main():
@@ -153,7 +206,7 @@ def main():
         sys.exit(1)
 
     node = Node(node_id)
-    node.start_server()
+    node.start()
 
 
 if __name__ == "__main__":
