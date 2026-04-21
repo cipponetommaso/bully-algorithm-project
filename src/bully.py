@@ -1,10 +1,11 @@
 # bully.py
 
 import threading
+import time
 
 from config import NODES, ANSWER_TIMEOUT, COORDINATOR_TIMEOUT
 from messages import ELECTION, ANSWER, COORDINATOR
-from utils import log, send_message
+from utils import log, send_message, is_node_alive
 
 
 """
@@ -16,9 +17,9 @@ Qui viene gestito il comportamento del nodo quando:
 - riceve un messaggio ANSWER
 - riceve un messaggio COORDINATOR
 
-In questa versione vengono anche gestiti i timeout reali richiesti dalla traccia:
-- timeout per aspettare ANSWER
-- timeout per aspettare COORDINATOR
+Vengono anche gestiti:
+- i timeout reali richiesti dalla traccia
+- il controllo automatico del coordinatore corrente
 """
 
 
@@ -27,13 +28,14 @@ class BullyNode:
     Questa classe rappresenta lo stato logico del nodo rispetto
     all'algoritmo di elezione.
 
-    Non gestisce direttamente la socket server perché quello è compito di node.py.
+    Non gestisce direttamente la socket server: quello è compito di node.py.
 
     Questa classe si occupa invece di:
     - tenere traccia del coordinatore corrente
     - sapere se è in corso un'elezione
     - reagire ai messaggi ricevuti
     - gestire i timeout dell'algoritmo
+    - controllare periodicamente se il coordinatore è ancora attivo
     """
 
     def __init__(self, node_id):
@@ -272,7 +274,92 @@ class BullyNode:
             if not self.coordinator_received and self.election_in_progress:
                 log(self.node_id, "Timeout scaduto: nessun COORDINATOR ricevuto")
                 log(self.node_id, "Riavvio elezione")
+
+        """
+        La nuova elezione viene avviata fuori dal blocco lock
+        per evitare problemi di concorrenza.
+        """
+        if self.election_in_progress and not self.coordinator_received:
+            self.start_election()
+
+    def monitor_coordinator(self):
+        """
+        Questo metodo controlla periodicamente se il coordinatore corrente
+        è ancora raggiungibile.
+
+        Il controllo viene fatto solo se:
+        - esiste un coordinatore noto
+        - il coordinatore non è il nodo corrente
+        - non è già in corso un'elezione
+
+        Se il coordinatore non risponde:
+        - il nodo lo considera fallito
+        - cancella il coordinatore corrente
+        - avvia automaticamente una nuova elezione
+
+        Questo controllo non introduce nuovi messaggi applicativi.
+        Viene verificata solo la raggiungibilità della socket TCP.
+        """
+
+        while True:
+            time.sleep(COORDINATOR_TIMEOUT)
+
+            with self.lock:
+                """
+                Se non conosciamo alcun coordinatore, non c'è nulla da controllare.
+                """
+                if self.coordinator_id is None:
+                    continue
+
+                """
+                Se il coordinatore corrente è il nodo stesso, non serve controllarlo.
+                """
+                if self.coordinator_id == self.node_id:
+                    continue
+
+                """
+                Se è già in corso un'elezione, non facciamo altri controlli
+                per evitare sovrapposizioni inutili.
+                """
+                if self.election_in_progress:
+                    continue
+
+                coordinator_id = self.coordinator_id
+
+            """
+            Il controllo della raggiungibilità viene fatto fuori dal lock
+            per non bloccare il resto del sistema.
+            """
+            alive = is_node_alive(coordinator_id)
+
+            if not alive:
+                with self.lock:
+                    """
+                    Ricontrolliamo che il coordinatore non sia già cambiato
+                    mentre stavamo facendo il test di raggiungibilità.
+                    """
+                    if self.coordinator_id == coordinator_id and not self.election_in_progress:
+                        log(self.node_id, "Timeout: coordinatore non risponde")
+                        log(self.node_id, f"P{coordinator_id} viene considerato fallito")
+                        self.coordinator_id = None
+
+                """
+                L'elezione viene avviata fuori dal lock
+                per evitare problemi di concorrenza.
+                """
                 self.start_election()
+
+    def start_monitoring(self):
+        """
+        Questo metodo avvia il thread che controlla periodicamente
+        lo stato del coordinatore.
+
+        Il thread gira in background per tutta la vita del nodo.
+        """
+
+        monitor_thread = threading.Thread(target=self.monitor_coordinator)
+        monitor_thread.daemon = True
+        monitor_thread.start()
 
     def cancel_timers(self):
         """
