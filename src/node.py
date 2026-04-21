@@ -7,6 +7,7 @@ import threading
 from config import NODES, BUFFER_SIZE
 from messages import parse_message
 from utils import log
+from bully import BullyNode
 
 
 """
@@ -17,9 +18,12 @@ Ogni nodo:
 - apre una socket server sulla porta associata
 - resta in ascolto di connessioni in ingresso
 - riceve i messaggi dagli altri nodi
-- li stampa e li interpreta
+- passa i messaggi ricevuti alla logica del Bully Algorithm
 
-Successivamente collegheremo questo file alla logica del Bully Algorithm.
+In questo file gestiamo:
+- la parte di rete
+- l'avvio del nodo
+- la ricezione dei messaggi
 """
 
 
@@ -27,15 +31,13 @@ class Node:
     """
     Questa classe rappresenta un singolo nodo del sistema distribuito.
 
-    Ogni oggetto Node conosce:
+    Ogni nodo conosce:
     - il proprio ID
-    - l'host su cui gira
-    - la porta su cui ascolta
+    - il proprio host
+    - la propria porta
 
-    Inoltre contiene i metodi necessari per:
-    - avviare il server
-    - accettare connessioni
-    - ricevere messaggi
+    Inoltre possiede un oggetto BullyNode, che contiene
+    la logica dell'algoritmo di elezione.
     """
 
     def __init__(self, node_id):
@@ -45,14 +47,18 @@ class Node:
         Parametri:
         - node_id: identificativo del nodo, ad esempio 1, 2, 3, 4 o 5
 
-        Dal file config.py recuperiamo automaticamente:
-        - host
-        - porta
+        Dal file config.py recuperiamo automaticamente host e porta
         associati a questo nodo.
+
+        Inoltre inizializziamo anche la parte logica
+        del Bully Algorithm.
         """
 
         self.node_id = node_id
         self.host, self.port = NODES[node_id]
+
+        # Oggetto che gestisce la logica dell'algoritmo Bully
+        self.bully_node = BullyNode(node_id)
 
     def start_server(self):
         """
@@ -95,7 +101,7 @@ class Node:
         Il metodo:
         - riceve i dati
         - interpreta il messaggio
-        - stampa le informazioni ricevute
+        - passa il messaggio alla logica Bully
         - chiude la connessione
         """
 
@@ -111,32 +117,14 @@ class Node:
                 log(self.node_id, "Messaggio ricevuto non valido")
                 return
 
-            self.handle_message(message)
+            # Il messaggio viene gestito dalla logica del Bully Algorithm
+            self.bully_node.handle_message(message)
 
         except Exception as e:
             log(self.node_id, f"Errore nella gestione della connessione: {e}")
 
         finally:
             client_socket.close()
-
-    def handle_message(self, message):
-        """
-        Questo metodo gestisce il contenuto del messaggio ricevuto.
-
-        Parametri:
-        - message: dizionario Python con i dati del messaggio
-
-        Per ora il metodo:
-        - estrae tipo e mittente
-        - stampa un log chiaro
-
-        In seguito qui collegheremo la logica dell'algoritmo Bully.
-        """
-
-        msg_type = message.get("type")
-        sender_id = message.get("sender")
-
-        log(self.node_id, f"Ricevuto messaggio {msg_type} da P{sender_id}")
 
 
 def main():
