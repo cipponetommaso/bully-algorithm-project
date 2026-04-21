@@ -177,6 +177,10 @@ class Node:
         server_thread.daemon = True
         server_thread.start()
 
+        # Avvio del monitoraggio automatico del coordinatore
+        self.bully_node.start_monitoring()
+
+        # Attesa di eventuale input da tastiera
         self.handle_user_input()
 
 
