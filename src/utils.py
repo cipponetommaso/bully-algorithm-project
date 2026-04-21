@@ -1,7 +1,7 @@
 # utils.py
 
 import socket
-from config import NODES, COORDINATOR_TIMEOUT
+from config import NODES, COORDINATOR_TIMEOUT, ANSWER_TIMEOUT
 from messages import build_message
 
 """
@@ -93,8 +93,8 @@ def is_node_alive(target_id):
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            # Impostiamo un timeout breve per non bloccare il nodo
-            s.settimeout(COORDINATOR_TIMEOUT)
+            # Usiamo il timeout già definito nel progetto per verificare se il coordinatore risponde
+            s.settimeout(ANSWER_TIMEOUT)
             s.connect((host, port))
 
         return True
