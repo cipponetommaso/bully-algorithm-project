@@ -39,9 +39,7 @@ Il progetto dimostra due fasi fondamentali:
 
 ## Requisiti
 
-Il progetto richiede:
-
-- Python 3
+Il progetto richiede Python 3.
 
 Non sono necessarie librerie esterne, in quanto vengono utilizzati
 esclusivamente moduli standard di Python.
@@ -50,7 +48,7 @@ esclusivamente moduli standard di Python.
 
 ## Esecuzione
 
-Aprire **5 terminali separati** e lanciare i seguenti comandi:
+Aprire 5 terminali separati e lanciare i seguenti comandi:
 
 ### Terminale 1
 python3 src/node.py 1
