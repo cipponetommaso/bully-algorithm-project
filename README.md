@@ -6,6 +6,8 @@ l'elezione di un coordinatore tramite Bully Algorithm.
 Il sistema è composto da 5 nodi indipendenti, eseguiti in terminali separati,
 che comunicano esclusivamente tramite socket TCP.
 
+Il PDF descrittivo del progetto e il video dimostrativo si trovano della cartella docs.
+
 ---
 
 ## Obiettivo
